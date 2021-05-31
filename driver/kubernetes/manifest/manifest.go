@@ -66,6 +66,18 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
+					Tolerations: []corev1.Toleration{
+						corev1.Toleration{
+							Key:      "spot",
+							Operator: corev1.TolerationOpExists,
+						},
+						corev1.Toleration{
+							Key:      "dedicated",
+							Effect:   corev1.TaintEffectNoSchedule,
+							Value:    "jenkins",
+							Operator: corev1.TolerationOpEqual,
+						},
+					},
 					Containers: []corev1.Container{
 						{
 							Name:  containerName,
