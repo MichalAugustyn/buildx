@@ -50,6 +50,17 @@ func (d *Driver) IsMobyDriver() bool {
 func (d *Driver) Config() driver.InitConfig {
 	return d.InitConfig
 }
+func (d *Driver) scale(ctx context.Context, replicas int32) error {
+	scale, err := d.deploymentClient.GetScale(ctx, d.deployment.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	scale.Spec.Replicas = replicas
+	if _, err := d.deploymentClient.UpdateScale(ctx, d.deployment.Name, scale, metav1.UpdateOptions{}); err != nil {
+		return errors.Wrapf(err, "error while calling deploymentClient.UpdateScale for %q", d.deployment.Name)
+	}
+	return nil
+}
 
 func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 	return progress.Wrap("[internal] booting buildkit", l, func(sub progress.SubLogger) error {
@@ -59,6 +70,15 @@ func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 			_, err = d.deploymentClient.Create(ctx, d.deployment, metav1.CreateOptions{})
 			if err != nil {
 				return errors.Wrapf(err, "error while calling deploymentClient.Create for %q", d.deployment.Name)
+			}
+		}
+		info, err := d.Info(ctx)
+		if err != nil {
+			return err
+		}
+		if info.Status == driver.Stopped {
+			if err := d.scale(ctx, int32(d.minReplicas)); err != nil {
+				return err
 			}
 		}
 		return sub.Wrap(
@@ -138,7 +158,13 @@ func (d *Driver) Info(ctx context.Context) (*driver.Info, error) {
 }
 
 func (d *Driver) Stop(ctx context.Context, force bool) error {
-	// future version may scale the replicas to zero here
+	info, err := d.Info(ctx)
+	if err != nil {
+		return err
+	}
+	if info.Status == driver.Running {
+		return d.scale(ctx, int32(0))
+	}
 	return nil
 }
 
